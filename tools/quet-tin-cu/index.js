@@ -30,13 +30,24 @@ const FIND_CHAT = () => {
     return true;
 };
 
-// Cuộn tới bong bóng, chờ ảnh tải, đọc nội dung, đổi ảnh blob thành data URL
+// Cuộn tới từng ảnh (Zalo chỉ tải ảnh đang hiện trên màn hình), chờ tải xong,
+// đọc nội dung, đổi ảnh blob thành data URL
 const READ_BUBBLE = `async ([id]) => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const b = document.getElementById(id);
     if (!b) return [];
     b.scrollIntoView({ block: "center" });
-    const imgs = () => [...b.querySelectorAll("img.zimg-el")].filter((i) => !i.closest(".message-quote-fragment__container"));
-    for (let t = 0; t < 30 && !imgs().every((i) => i.complete && i.src); t++) await new Promise((r) => setTimeout(r, 100));
+    const slots = [...b.querySelectorAll("[data-component='photo']")];
+    if (!slots.length && b.querySelector("[data-id='div_ReceivedMsg_Photo']")) slots.push(b);
+    for (const slot of slots) {
+        if (slot.querySelector(".card--group-photo__row__item__video, .fa-play")) continue;
+        slot.scrollIntoView({ block: "center" });
+        for (let t = 0; t < 80; t++) {
+            const img = [...slot.querySelectorAll("img.zimg-el")].find((i) => !i.closest(".message-quote-fragment__container"));
+            if (img && img.src.startsWith("blob:") && img.complete && img.naturalWidth > 0) break;
+            await sleep(100);
+        }
+    }
     const items = (${extractBubble.toString()})(b);
     for (const it of items) {
         if (it.type !== "photo" || !it.img) continue;

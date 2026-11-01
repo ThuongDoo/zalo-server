@@ -6,7 +6,7 @@
 //   system/config        – cài đặt (nhóm, giờ quét, bật/tắt tự động)
 //   system/zaloSession   – phiên đăng nhập Zalo (đã mã hóa) để khỏi quét QR lại khi server khởi động lại
 import crypto from "node:crypto";
-import { collection, doc, getDoc, getDocs, setDoc, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, writeBatch } from "firebase/firestore";
 import { firestore } from "./firebase.js";
 
 // Giới hạn số mục để mỗi document luôn dưới 1MB; mục cũ nhất bị bỏ trước
@@ -21,7 +21,6 @@ export const DEFAULT_CONFIG = {
     autoScan: true,
     scanTimes: ["07:00", "12:00", "21:00"],
     historyCount: 500,
-    groupWindowSeconds: 120,
 };
 
 export const db = {
@@ -72,6 +71,15 @@ export async function save() {
     }
     batch.set(systemDoc("state"), { lastScan: db.lastScan });
     await batch.commit();
+}
+
+// Xóa hết sản phẩm và chỉ mục để quét lại từ đầu; giữ cài đặt và phiên Zalo
+export async function resetProducts() {
+    const snap = await getDocs(collection(firestore, "products"));
+    await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+    Object.assign(db, { products: [], msgIndex: {}, seen: {}, reactions: {}, lastScan: null });
+    dirty.clear();
+    await save();
 }
 
 export async function saveConfig() {

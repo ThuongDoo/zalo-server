@@ -24,9 +24,10 @@ function photoUrlOf(data) {
 
 // Cloudinary nhận cả link ảnh Zalo lẫn data URL (từ công cụ quét tin cũ).
 // CLOUDINARY_URL trong biến môi trường được SDK tự đọc.
-async function uploadImage(url, productId, msgId) {
+// Đặt tên theo mã tin (không theo món) để quét lại/tách món lại thì dùng lại ảnh cũ, không tải trùng
+async function uploadImage(url, msgId) {
     const res = await cloudinary.uploader.upload(url, {
-        folder: `zalo/${productId}`,
+        folder: "zalo",
         public_id: String(msgId),
         overwrite: false,
     });
@@ -91,21 +92,37 @@ export async function processReactions(reactions, ownerIds) {
     return { soldOut };
 }
 
-// Sản phẩm cùng người đăng có khoảng thời gian sát với tin này (tin cũ nhập sau vẫn gộp đúng)
-function nearbyProductOf(uid, ts, windowMs) {
+// Cách chủ shop đăng: 1 album ảnh, 10–30 giây sau là 1–2 dòng mô tả (kích thước, giá, số lượng),
+// rồi tới album của món tiếp theo. Mỗi album mở 1 món mới, chữ ngay sau album là mô tả của món đó.
+const PHOTO_GAP_MS = 60_000; // ảnh cách ảnh trước ≤ 60s và món chưa có mô tả => cùng album
+const TEXT_GAP_MS = 5 * 60_000; // mô tả đến trong 5 phút sau ảnh => thuộc món đó
+const TEXT_FIRST_GAP_MS = 30_000; // thỉnh thoảng gửi giá trước rồi mới gửi ảnh
+
+// Món gần nhất của người đăng bắt đầu trước tin này (tin cũ nhập sau vẫn gộp đúng chỗ)
+function currentProductOf(uid, ts) {
     for (let i = db.products.length - 1; i >= 0; i--) {
         const p = db.products[i];
-        if (p.ownerId === uid && ts >= p.createdAt - windowMs && ts <= p.lastTs + windowMs) return p;
+        if (p.ownerId === uid && p.createdAt <= ts) return p;
     }
     return null;
 }
 
+function belongsTo(p, isPhoto, ts) {
+    if (!p) return false;
+    const gap = ts - p.lastTs;
+    if (isPhoto) {
+        if (p.images.length) return !p.text && gap <= PHOTO_GAP_MS;
+        return gap <= TEXT_FIRST_GAP_MS;
+    }
+    return p.images.length > 0 && gap <= TEXT_GAP_MS;
+}
+
 /**
  * Xử lý danh sách tin nhắn nhóm (từ lịch sử hoặc realtime).
- * - Tin của chủ nhóm gửi liền nhau (ảnh + mô tả) được gộp thành 1 sản phẩm.
+ * - Album ảnh + dòng mô tả ngay sau => 1 sản phẩm.
  * - Tin chủ nhóm reply lại tin cũ có chữ "hết" => đánh dấu hết hàng.
  */
-export async function processMessages(messages, ownerIds, windowSeconds) {
+export async function processMessages(messages, ownerIds) {
     const msgs = messages
         .map((m) => m.data)
         .filter((d) => !db.seen[d.msgId])
@@ -142,8 +159,8 @@ export async function processMessages(messages, ownerIds, windowSeconds) {
         const photoUrl = photoUrlOf(d);
         if (!photoUrl && !text) continue;
 
-        let product = nearbyProductOf(d.uidFrom, ts, windowSeconds * 1000);
-        if (!product) {
+        let product = currentProductOf(d.uidFrom, ts);
+        if (!belongsTo(product, !!photoUrl, ts)) {
             product = {
                 id: String(d.msgId),
                 ownerId: d.uidFrom,
@@ -171,7 +188,7 @@ export async function processMessages(messages, ownerIds, windowSeconds) {
 
         if (photoUrl) {
             try {
-                product.images.push(await uploadImage(photoUrl, product.id, d.msgId));
+                product.images.push(await uploadImage(photoUrl, d.msgId));
             } catch (e) {
                 console.error("Không tải được ảnh lên Cloudinary:", e.message);
                 // Link Zalo vẫn xem được một thời gian; data URL thì quá lớn để lưu

@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import { ThreadType } from "zca-js";
 import { requireUser } from "./auth.js";
-import { db, config, loadStore, save, saveConfig, touch } from "./store.js";
+import { db, config, loadStore, resetProducts, save, saveConfig, touch } from "./store.js";
 import { processMessages, processReactions } from "./processor.js";
 import { login, listGroups, fetchGroupHistory, loginState } from "./zalo.js";
 
@@ -53,7 +53,7 @@ async function scan() {
         const groupMsgs = await fetchGroupHistory(api, state.group.id, config.historyCount);
         const reactions = await fetchOldReactions();
         const result = await enqueue(async () => {
-            const r = await processMessages(groupMsgs, state.ownerIds, config.groupWindowSeconds);
+            const r = await processMessages(groupMsgs, state.ownerIds);
             r.soldOut += (await processReactions(reactions, state.ownerIds)).soldOut;
             return r;
         });
@@ -72,7 +72,7 @@ async function scan() {
 function startListener() {
     api.listener.on("message", (msg) => {
         if (!config.autoScan || msg.type !== ThreadType.Group || msg.threadId !== state.group?.id) return;
-        enqueue(() => processMessages([msg], state.ownerIds, config.groupWindowSeconds)).catch((e) =>
+        enqueue(() => processMessages([msg], state.ownerIds)).catch((e) =>
             console.error("Lỗi xử lý tin realtime:", e.message),
         );
     });
@@ -216,11 +216,20 @@ app.post("/api/import", async (req, res) => {
     const ownerIds = [...new Set([...state.ownerIds, ...adminIds])];
     try {
         const result = await enqueue(async () => {
-            const r = await processMessages(messages, ownerIds, config.groupWindowSeconds);
+            const r = await processMessages(messages, ownerIds);
             r.soldOut += (await processReactions(reactions, ownerIds)).soldOut;
             return r;
         });
         res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post("/api/reset", async (req, res) => {
+    try {
+        await enqueue(resetProducts);
+        res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
