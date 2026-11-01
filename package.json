@@ -1,0 +1,22 @@
+{
+  "name": "quetgroupzalo-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --env-file=.env --watch src/index.js"
+  },
+  "dependencies": {
+    "cloudinary": "^2.11.0",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "firebase": "^13.1.0",
+    "firebase-admin": "^14.5.0",
+    "zca-js": "^2.2.0"
+  }
+}

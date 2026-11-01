@@ -1,0 +1,6 @@
+node_modules/
+.env
+tools/quet-tin-cu/node_modules/
+tools/quet-tin-cu/config.json
+tools/quet-tin-cu/zaloweb-profile/
+tools/quet-tin-cu/debug.json
